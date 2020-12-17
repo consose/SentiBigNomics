@@ -62,15 +62,14 @@ tokens of interest, namely *unemployment* and *economy*, given the two
 following sentences.
 
 ``` bash
-text = ['Unemployment is rising at high speed', 'The economy is slowing down and unemployment is booming')
-include = ['unemployment', 'economy')
+text = ['Unemployment is rising at high speed', 'The economy is slowing down and unemployment is booming']
+include = ['unemployment', 'economy']
 
 get_sentiment(text = text, include = include)
-#>   Doc_id Text                       Chunk              Sentiment Tense Include  
-#>    <dbl> <chr>                      <chr>                  <dbl> <chr> <chr>    
-#> 1      1 Unemployment is rising at… Unemployment is r…    -0.899 pres… unemploy…
-#> 2      2 The economy is slowing do… economy is slowing    -0.3   pres… economy  
-#> 3      2 The economy is slowing do… unemployment is b…    -0.8   pres… unemploy…
+>   Doc_id Text                       Chunk              Sentiment Tense Include  
+>       1 Unemployment is rising at… Unemployment is r…    -0.899 pres… unemploy…
+>       2 The economy is slowing do… economy is slowing    -0.3   pres… economy  
+>       2 The economy is slowing do… unemployment is b…    -0.8   pres… unemploy…
 ```
 
 The output of the function `get_sentiment` is a list, containing two
