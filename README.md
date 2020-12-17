@@ -94,7 +94,7 @@ If you use this package, we encourage you to add the following references to the
 
 <!-- ## References: -->
 
-	- Barbaglia L., Consoli S., Manzan S. (2021).
+  - Barbaglia L., Consoli S., Manzan S. (2021).
     Fine-grained, aspect-based sentiment analysis on economic and financial lexicon. Available at arXiv:
     
   - Barbaglia L., Consoli S., Manzan S. (September 23, 2020).
