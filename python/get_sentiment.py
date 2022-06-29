@@ -14,7 +14,7 @@ import getpass
 from nltk.corpus import sentiwordnet as swn  
 from pathlib import Path
 import re 
-#import senticnet5
+import senticnet5
 import senti_bignomics
 
 
@@ -25,14 +25,20 @@ def safe_string_cast_to_numerictype(val, to_type, default = None):
         return default
 
 
-def FeelIt(tlemma, tpos=None, tokentlemma=None, PrintScr=False, UseSenticNet=False):
-    tosearcsenticnet = tlemma.lower().replace(" ", "_")
-    sentibignomicsitem = senti_bignomics.senti_bignomics.get(tosearcsenticnet)
-    if sentibignomicsitem and sentibignomicsitem[0]:
-        valstr = sentibignomicsitem[0]
-        senti_bignomics_sentiment = safe_string_cast_to_numerictype(valstr, float, 0)
-        computed_sentiment = senti_bignomics_sentiment
-        return computed_sentiment
+def FeelIt(tlemma, tpos=None, tokentlemma=None, PrintScr=False, UseSenticNet=False,UseSentiWordNet=False,UseFigas=True):
+
+    computed_sentiment = 0.0
+
+    senti_bignomics_sentiment = 0.0
+    if UseFigas==True:
+        tosearcsenticnet = tlemma.lower().replace(" ", "_")
+        sentibignomicsitem = senti_bignomics.senti_bignomics.get(tosearcsenticnet)
+        if sentibignomicsitem and sentibignomicsitem[0]:
+            valstr = sentibignomicsitem[0]
+            senti_bignomics_sentiment = safe_string_cast_to_numerictype(valstr, float, 0)
+            #computed_sentiment = senti_bignomics_sentiment
+            #return computed_sentiment
+
     if tpos == "NOUN":
         posval = "n"
     elif tpos == "VERB":
@@ -43,27 +49,30 @@ def FeelIt(tlemma, tpos=None, tokentlemma=None, PrintScr=False, UseSenticNet=Fal
         posval = "r"
     else:
         posval = "n"
-    avgsc = 0
-    try:
-        llsenses_pos = list(swn.senti_synsets(tlemma.lower(), posval))
-    except:
-        llsenses_pos = []
-    if llsenses_pos and len(llsenses_pos) > 0:
-        for thistimescore in llsenses_pos:
-            avgsc = thistimescore.pos_score() - thistimescore.neg_score()
-            if avgsc != 0:
-                break
-    if avgsc == 0 and posval == "a":
-        posval = "s"
+
+    avgscSWN = 0
+    if UseSentiWordNet==True:
         try:
             llsenses_pos = list(swn.senti_synsets(tlemma.lower(), posval))
         except:
             llsenses_pos = []
         if llsenses_pos and len(llsenses_pos) > 0:
             for thistimescore in llsenses_pos:
-                avgsc = thistimescore.pos_score() - thistimescore.neg_score()
-                if avgsc != 0:
+                avgscSWN = thistimescore.pos_score() - thistimescore.neg_score()
+                if avgscSWN != 0:
                     break
+        if avgscSWN == 0 and posval == "a":
+            posval = "s"
+            try:
+                llsenses_pos = list(swn.senti_synsets(tlemma.lower(), posval))
+            except:
+                llsenses_pos = []
+            if llsenses_pos and len(llsenses_pos) > 0:
+                for thistimescore in llsenses_pos:
+                    avgscSWN = thistimescore.pos_score() - thistimescore.neg_score()
+                    if avgscSWN != 0:
+                        break
+
     sentic_sentiment = 0
     if UseSenticNet == True:
         tosearcsenticnet = tlemma.lower().replace(" ", "_")
@@ -71,20 +80,38 @@ def FeelIt(tlemma, tpos=None, tokentlemma=None, PrintScr=False, UseSenticNet=Fal
         if senticitem and senticitem[7]:
             valstr = senticitem[7]
             sentic_sentiment = safe_string_cast_to_numerictype(valstr, float, 0)
+
+    #if sentic_sentiment != 0:
+    #    computed_sentiment = (sentic_sentiment + avgscSWN) / 2
+    #else:
+    #    computed_sentiment = avgscSWN
+
+    denom_for_average = 0
+    num_for_average = 0.0
     if sentic_sentiment != 0:
-        computed_sentiment = (sentic_sentiment + avgsc) / 2
-    else:
-        computed_sentiment = avgsc
+        denom_for_average=denom_for_average+1
+        num_for_average = sentic_sentiment
+    if avgscSWN != 0:
+        denom_for_average = denom_for_average + 1
+        num_for_average = avgscSWN
+    if senti_bignomics_sentiment !=0:
+        denom_for_average = denom_for_average + 1
+        num_for_average = senti_bignomics_sentiment
+
+    computed_sentiment = 0
+    if denom_for_average != 0:
+        computed_sentiment = num_for_average / denom_for_average
+
     return computed_sentiment
 
 
-def FeelIt_OverallSentiment(toi, PrintScr=False, UseSenticNet=False):
+def FeelIt_OverallSentiment(toi, PrintScr=False, UseSenticNet=True, UseSentiWordNet=True, UseFigas=True):
     sentim_all = 0.0
     countsss = 0
     for xin in toi.sent:
         if (xin.pos_ == "ADJ") | (xin.pos_ == "ADV") | (xin.pos_ == "NOUN") | (xin.pos_ == "PROPN") | (
                 xin.pos_ == "VERB"):
-            sentim_app = FeelIt(xin.lemma_.lower(), xin.pos_, xin)
+            sentim_app = FeelIt(xin.lemma_.lower(), xin.pos_, xin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
             if sentim_app != 0.0:
                 countsss = countsss + 1
             sentim_all = sentim_all + sentim_app
@@ -93,7 +120,7 @@ def FeelIt_OverallSentiment(toi, PrintScr=False, UseSenticNet=False):
     return sentim_all
 
 
-def PREP_token_IE_parsing(xin,singleNOUNs, singleCompoundedHITs, singleCompoundedHITs_toEXCLUDE,LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP, COMPUTE_OVERALL_SENTIMENT_SCORE, minw, maxw, FoundVerb, t, nountoskip=None, previousprep=None):
+def PREP_token_IE_parsing(xin,singleNOUNs, singleCompoundedHITs, singleCompoundedHITs_toEXCLUDE,LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP, COMPUTE_OVERALL_SENTIMENT_SCORE, minw, maxw, FoundVerb, t, nountoskip=None, previousprep=None,UseSenticNet=True, UseSentiWordNet=True, UseFigas=True):
     listOfPreps = []
     listOfPreps_sentim = []
     lxin_n = [x for x in xin.lefts]
@@ -110,7 +137,7 @@ def PREP_token_IE_parsing(xin,singleNOUNs, singleCompoundedHITs, singleCompounde
                 other_list_NOUN, sentilist, minw, maxw = NOUN_token_IE_parsing(xinxin,singleNOUNs,singleCompoundedHITs, singleCompoundedHITs_toEXCLUDE,LOCATION_SYNONYMS_FOR_HEURISTIC,
                                                                                VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE, minw=minw,maxw=maxw,
                                                                                verbtoskip=FoundVerb, nountoskip=t)
-                sentim_noun = FeelIt(xinxin.lemma_.lower(), xinxin.pos_, xinxin)
+                sentim_noun = FeelIt(xinxin.lemma_.lower(), xinxin.pos_, xinxin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if other_list_NOUN and len(other_list_NOUN) > 0:
                     listNoun_app = []
                     FoundNounInlist = "___" + xinxin.lemma_.lower() + " ["+xinxin.pos_+", "+xinxin.tag_+" ("+str(sentim_noun)+ ")]"
@@ -144,7 +171,7 @@ def PREP_token_IE_parsing(xin,singleNOUNs, singleCompoundedHITs, singleCompounde
                 maxw = max(maxw, xinxin.i)
                 iterated_list_VERB, list_verbs_sentim_app, minw, maxw = VERB_token_IE_parsing(xinxin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                               LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                                                                              t, minw, maxw,nountoskip=nountoskip,previousverb=FoundVerb)
+                                                                                              t, minw, maxw,nountoskip=nountoskip,previousverb=FoundVerb,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if iterated_list_VERB and len(iterated_list_VERB) > 0:
                     listOfPreps.extend(iterated_list_VERB)
                     if list_verbs_sentim_app and len(list_verbs_sentim_app) > 0:
@@ -158,7 +185,7 @@ def PREP_token_IE_parsing(xin,singleNOUNs, singleCompoundedHITs, singleCompounde
                 iterated_list_prep, iterated_list_prep_sentim, minw, maxw = PREP_token_IE_parsing(xinxin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                                   LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
                                                                                                   minw=minw,maxw=maxw,FoundVerb=FoundVerb,t=t,nountoskip=nountoskip,
-                                                                                                  previousprep=xin)
+                                                                                                  previousprep=xin,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if iterated_list_prep and len(iterated_list_prep) > 0:
                     listOfPreps.extend(iterated_list_prep)
                     if iterated_list_prep_sentim and len(iterated_list_prep_sentim) > 0:
@@ -175,7 +202,7 @@ def PREP_token_IE_parsing(xin,singleNOUNs, singleCompoundedHITs, singleCompounde
                 other_list_NOUN, sentilist, minw, maxw = NOUN_token_IE_parsing(xinxin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
                                                                                minw=minw, maxw=maxw,verbtoskip=FoundVerb, nountoskip=t)
-                sentim_noun = FeelIt(xinxin.lemma_.lower(), xinxin.pos_, xinxin)
+                sentim_noun = FeelIt(xinxin.lemma_.lower(), xinxin.pos_, xinxin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if other_list_NOUN and len(other_list_NOUN) > 0:
                     listNoun_app = []
                     FoundNounInlist = "___" + xinxin.lemma_.lower() + " ["+xinxin.pos_+", "+xinxin.tag_+" ("+str(sentim_noun)+ ")]"
@@ -209,7 +236,7 @@ def PREP_token_IE_parsing(xin,singleNOUNs, singleCompoundedHITs, singleCompounde
                 maxw = max(maxw, xinxin.i)
                 iterated_list_VERB, list_verbs_sentim_app, minw, maxw = VERB_token_IE_parsing(xinxin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                               LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                                                                              t, minw, maxw,nountoskip=nountoskip,previousverb=FoundVerb)
+                                                                                              t, minw, maxw,nountoskip=nountoskip,previousverb=FoundVerb,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if iterated_list_VERB and len(iterated_list_VERB) > 0:
                     listOfPreps.extend(iterated_list_VERB)
                     if list_verbs_sentim_app and len(list_verbs_sentim_app) > 0:
@@ -223,7 +250,7 @@ def PREP_token_IE_parsing(xin,singleNOUNs, singleCompoundedHITs, singleCompounde
                 iterated_list_prep, iterated_list_prep_sentim, minw, maxw = PREP_token_IE_parsing(xinxin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                                   LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
                                                                                                   minw=minw,maxw=maxw,FoundVerb=FoundVerb,t=t,nountoskip=nountoskip,
-                                                                                                  previousprep=xin)
+                                                                                                  previousprep=xin,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if iterated_list_prep and len(iterated_list_prep) > 0:
                     listOfPreps.extend(iterated_list_prep)
                     if iterated_list_prep_sentim and len(iterated_list_prep_sentim) > 0:
@@ -231,7 +258,7 @@ def PREP_token_IE_parsing(xin,singleNOUNs, singleCompoundedHITs, singleCompounde
     return listOfPreps, listOfPreps_sentim, minw, maxw
 
 
-def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE, t, minw, maxw, nountoskip=None,previousverb=None):
+def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE, t, minw, maxw, nountoskip=None,previousverb=None,UseSenticNet=True, UseSentiWordNet=True, UseFigas=True):
     listVerbs = []
     listVerbs_sentim = []
     CompoundsOfSingleHit = findCompoundedHITsOfTerm(singleCompoundedHITs, FoundVerb)
@@ -254,7 +281,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                     continue
                 minw = min(minw, xin.i)
                 maxw = max(maxw, xin.i)
-                sentim_app = FeelIt(xin.lemma_.lower(), xin.pos_, xin)
+                sentim_app = FeelIt(xin.lemma_.lower(), xin.pos_, xin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 FoundVerbAdverb = FoundVerbAdverb + "__" + xin.lemma_.lower() + " [" + xin.pos_ + ", " + xin.tag_ + " (" + str(sentim_app) + ")]"
                 if FoundVerbAdverb_sentim == 0:
                     FoundVerbAdverb_sentim = sentim_app
@@ -278,7 +305,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                                     xinxin.tag_ == "JJR" or xinxin.tag_ == "JJS" or xinxin.tag_ == "JJ")))) and xinxin.lemma_.lower() != t.lemma_.lower():  
                             minw = min(minw, xinxin.i)
                             maxw = max(maxw, xinxin.i)
-                            sentim_app = FeelIt(xinxin.lemma_.lower(), xinxin.pos_, xinxin)
+                            sentim_app = FeelIt(xinxin.lemma_.lower(), xinxin.pos_, xinxin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                             foundadv = foundadv + "__" + xinxin.lemma_.lower() + " [" + xinxin.pos_ + ", " + xinxin.tag_ + " (" + str(sentim_app) + ")]"
                             if foundadv_sentim == 0:
                                 foundadv_sentim = sentim_app
@@ -296,7 +323,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                                     xinxin.tag_ == "JJR" or xinxin.tag_ == "JJS" or xinxin.tag_ == "JJ")))) and xinxin.lemma_.lower() != t.lemma_.lower():  
                             minw = min(minw, xinxin.i)
                             maxw = max(maxw, xinxin.i)
-                            sentim_app = FeelIt(xinxin.lemma_.lower(), xinxin.pos_, xinxin)
+                            sentim_app = FeelIt(xinxin.lemma_.lower(), xinxin.pos_, xinxin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                             foundadv = foundadv + "__" + xinxin.lemma_.lower() + " [" + xinxin.pos_ + ", " + xinxin.tag_ + " (" + str(sentim_app) + ")]"
                             if foundadv_sentim == 0:
                                 foundadv_sentim = sentim_app
@@ -307,7 +334,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                                 else:  
                                     foundadv_sentim = np.sign(foundadv_sentim) * (
                                             abs(foundadv_sentim) + (1 - abs(foundadv_sentim)) * abs(sentim_app))
-                sentim_compound = FeelIt(xin.lemma_.lower(), xin.pos_, xin)
+                sentim_compound = FeelIt(xin.lemma_.lower(), xin.pos_, xin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 listFoundModofVB.append((xin.lemma_.lower() + " [" + xin.pos_ + ", " + xin.tag_ + " (" + str(sentim_compound) + ")]" + foundadv))
                 if sentim_compound == 0:
                     sentim_compound = foundadv_sentim
@@ -333,7 +360,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                 iterated_list_NOUN, sentilist, minw, maxw = NOUN_token_IE_parsing(xin, singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,LOCATION_SYNONYMS_FOR_HEURISTIC,
                                                                                   VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE, minw=minw, maxw=maxw,
                                                                                   verbtoskip=FoundVerb, nountoskip=t)
-                sentim_noun = FeelIt(xin.lemma_.lower(), xin.pos_, xin)
+                sentim_noun = FeelIt(xin.lemma_.lower(), xin.pos_, xin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if iterated_list_NOUN and len(iterated_list_NOUN) > 0:
                     #
                     listNoun_app = []
@@ -369,7 +396,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                 maxw = max(maxw, xin.i)
                 iterated_list_prep, iterated_list_prep_sentim, minw, maxw = PREP_token_IE_parsing(xin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                                   LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                                                                                  minw=minw,maxw=maxw,FoundVerb=FoundVerb,t=t,nountoskip=nountoskip)
+                                                                                                  minw=minw,maxw=maxw,FoundVerb=FoundVerb,t=t,nountoskip=nountoskip,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if iterated_list_prep and len(iterated_list_prep) > 0:
                     listFoundModofVB.extend(iterated_list_prep)
                     if iterated_list_prep_sentim and len(iterated_list_prep_sentim) > 0:
@@ -399,7 +426,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                     continue
                 minw = min(minw, xin.i)
                 maxw = max(maxw, xin.i)
-                sentim_app = FeelIt(xin.lemma_.lower(), xin.pos_, xin)
+                sentim_app = FeelIt(xin.lemma_.lower(), xin.pos_, xin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 FoundVerbAdverb = FoundVerbAdverb + "__" + xin.lemma_.lower() + " ["+xin.pos_+", "+xin.tag_+" ("+str(sentim_app)+ ")]"
                 if FoundVerbAdverb_sentim == 0:
                     FoundVerbAdverb_sentim = sentim_app
@@ -425,7 +452,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                                     xinxin.tag_ == "JJR" or xinxin.tag_ == "JJS" or xinxin.tag_ == "JJ")))) and xinxin.lemma_.lower() != t.lemma_.lower():  
                             minw = min(minw, xinxin.i)
                             maxw = max(maxw, xinxin.i)
-                            sentim_app = FeelIt(xinxin.lemma_.lower(), xinxin.pos_, xinxin)
+                            sentim_app = FeelIt(xinxin.lemma_.lower(), xinxin.pos_, xinxin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                             foundadv = foundadv + "__" + xinxin.lemma_.lower() + " [" + xinxin.pos_ + ", " + xinxin.tag_ + " (" + str(sentim_app) + ")]"
                             if foundadv_sentim == 0:
                                 foundadv_sentim = sentim_app
@@ -444,7 +471,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                                     xinxin.tag_ == "JJR" or xinxin.tag_ == "JJS" or xinxin.tag_ == "JJ")))) and xinxin.lemma_.lower() != t.lemma_.lower():  
                             minw = min(minw, xinxin.i)
                             maxw = max(maxw, xinxin.i)
-                            sentim_app = FeelIt(xinxin.lemma_.lower(), xinxin.pos_, xinxin)
+                            sentim_app = FeelIt(xinxin.lemma_.lower(), xinxin.pos_, xinxin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                             foundadv = foundadv + "__" + xinxin.lemma_.lower() + " ["+xinxin.pos_+", "+xinxin.tag_+" ("+str(sentim_app)+ ")]"
                             if foundadv_sentim == 0:
                                 foundadv_sentim = sentim_app
@@ -455,7 +482,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                                 else:  
                                     foundadv_sentim = np.sign(foundadv_sentim) * (
                                             abs(foundadv_sentim) + (1 - abs(foundadv_sentim)) * abs(sentim_app))
-                sentim_compound = FeelIt(xin.lemma_.lower(), xin.pos_, xin)
+                sentim_compound = FeelIt(xin.lemma_.lower(), xin.pos_, xin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 listFoundModofVB.append((xin.lemma_.lower() + " [" + xin.pos_ + ", " + xin.tag_ + " (" + str(sentim_compound) + ")]" + foundadv))
                 if sentim_compound == 0:
                     sentim_compound = foundadv_sentim
@@ -478,7 +505,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                 iterated_list_NOUN, sentilist, minw, maxw = NOUN_token_IE_parsing(xin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,LOCATION_SYNONYMS_FOR_HEURISTIC,
                                                                                   VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE, minw=minw, maxw=maxw,
                                                                                   verbtoskip=FoundVerb, nountoskip=t)
-                sentim_noun = FeelIt(xin.lemma_.lower(), xin.pos_, xin)
+                sentim_noun = FeelIt(xin.lemma_.lower(), xin.pos_, xin, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if iterated_list_NOUN and len(iterated_list_NOUN) > 0:
                     #
                     listNoun_app = []
@@ -513,7 +540,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                 iterated_list_prep, iterated_list_prep_sentim, minw, maxw = PREP_token_IE_parsing(xin,singleNOUNs,singleCompoundedHITs,
                                                                                                   singleCompoundedHITs_toEXCLUDE,LOCATION_SYNONYMS_FOR_HEURISTIC,
                                                                                                   VERBS_TO_KEEP, COMPUTE_OVERALL_SENTIMENT_SCORE, minw=minw,
-                                                                                                  maxw=maxw,FoundVerb=FoundVerb,t=t,nountoskip=nountoskip)
+                                                                                                  maxw=maxw,FoundVerb=FoundVerb,t=t,nountoskip=nountoskip,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if iterated_list_prep and len(iterated_list_prep) > 0:
                     listFoundModofVB.extend(iterated_list_prep)
                     if iterated_list_prep_sentim and len(iterated_list_prep_sentim) > 0:
@@ -529,7 +556,7 @@ def VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleComp
                         FoundNeg = "__not"
                         minw = min(minw, xinxin.i)
                         maxw = max(maxw, xinxin.i)
-    sentim_vb = FeelIt(FoundVerb.lemma_.lower(), FoundVerb.pos_, FoundVerb)
+    sentim_vb = FeelIt(FoundVerb.lemma_.lower(), FoundVerb.pos_, FoundVerb, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
     if not listFoundModofVB or len(listFoundModofVB) <= 0:
         if (FoundVerb.lemma_.lower() != "be" and FoundVerb.lemma_.lower() != "have"):
             FoundVerb_name = FoundVerb.lemma_.lower() + " ["+FoundVerb.pos_+", "+FoundVerb.tag_+" ("+str(sentim_vb)+ ")]" + FoundVerbAdverb
@@ -589,7 +616,7 @@ def IsInterestingToken(t):
     return ret
 
 
-def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompoundedHITs_toEXCLUDE,LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,minw, maxw, verbtoskip=None, nountoskip=None):
+def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompoundedHITs_toEXCLUDE,LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,minw, maxw, verbtoskip=None, nountoskip=None, UseSenticNet=True, UseSentiWordNet=True, UseFigas=True):
     to_give_back = []
     to_give_back_sentiment = []
     ll = [x for x in t.lefts]
@@ -615,7 +642,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
                         list_verbs_app, list_verbs_sentim_app, minw, maxw = VERB_token_IE_parsing(
                             vin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                             LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                            t, minw, maxw,nountoskip=nountoskip,previousverb=FoundVerb)
+                            t, minw, maxw,nountoskip=nountoskip,previousverb=FoundVerb,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                         if list_verbs_app and len(list_verbs_app) > 0:
                             listVerbs.extend(list_verbs_app)
                             if list_verbs_sentim_app and len(list_verbs_sentim_app) > 0:
@@ -631,7 +658,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
                                     list_verbs_app, list_verbs_sentim_app, minw, maxw = VERB_token_IE_parsing(
                                         vinvin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                         LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                        t,minw,maxw,nountoskip=nountoskip,previousverb=FoundVerb)
+                                        t,minw,maxw,nountoskip=nountoskip,previousverb=FoundVerb,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                                     if list_verbs_app and len(list_verbs_app) > 0:
                                         listVerbs.extend(list_verbs_app)
                                         if list_verbs_sentim_app and len(list_verbs_sentim_app) > 0:
@@ -645,7 +672,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
                                     list_verbs_app, list_verbs_sentim_app, minw, maxw = VERB_token_IE_parsing(
                                         vinvin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                         LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                        t,minw,maxw,nountoskip=nountoskip,previousverb=FoundVerb)
+                                        t,minw,maxw,nountoskip=nountoskip,previousverb=FoundVerb,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                                     if list_verbs_app and len(list_verbs_app) > 0:
                                         listVerbs.extend(list_verbs_app)
                                         if list_verbs_sentim_app and len(list_verbs_sentim_app) > 0:
@@ -661,7 +688,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
                         list_verbs_app, list_verbs_sentim_app, minw, maxw = VERB_token_IE_parsing(
                             vin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                             LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                            t, minw, maxw,nountoskip=nountoskip,previousverb=FoundVerb)
+                            t, minw, maxw,nountoskip=nountoskip,previousverb=FoundVerb,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                         if list_verbs_app and len(list_verbs_app) > 0:
                             listVerbs.extend(list_verbs_app)
                             if list_verbs_sentim_app and len(list_verbs_sentim_app) > 0:
@@ -676,7 +703,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
                                     maxw = max(maxw, vinvin.i)
                                     list_verbs_app, list_verbs_sentim_app, minw, maxw = VERB_token_IE_parsing(vinvin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                                               LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                                                                                              t,minw,maxw,nountoskip=nountoskip,previousverb=FoundVerb)
+                                                                                                              t,minw,maxw,nountoskip=nountoskip,previousverb=FoundVerb,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                                     if list_verbs_app and len(list_verbs_app) > 0:
                                         listVerbs.extend(list_verbs_app)
                                         if list_verbs_sentim_app and len(list_verbs_sentim_app) > 0:
@@ -690,7 +717,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
                                     maxw = max(maxw, vinvin.i)
                                     list_verbs_app, list_verbs_sentim_app, minw, maxw = VERB_token_IE_parsing(vinvin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                                               LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                                                                                              t,minw,maxw,nountoskip=nountoskip,previousverb=FoundVerb)
+                                                                                                              t,minw,maxw,nountoskip=nountoskip,previousverb=FoundVerb,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                                     if list_verbs_app and len(list_verbs_app) > 0:
                                         listVerbs.extend(list_verbs_app)
                                         if list_verbs_sentim_app and len(list_verbs_sentim_app) > 0:
@@ -700,7 +727,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
             maxw = max(maxw, FoundVerb.i)
             list_verbs_app, list_verbs_sentim_app, minw, maxw = VERB_token_IE_parsing(FoundVerb, singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                       LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                                                                      t, minw=minw, maxw=maxw,nountoskip=nountoskip)
+                                                                                      t, minw=minw, maxw=maxw,nountoskip=nountoskip,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
             if list_verbs_app and len(list_verbs_app) > 0:
                 listVerbs.extend(list_verbs_app)
                 if list_verbs_sentim_app and len(list_verbs_sentim_app) > 0:
@@ -724,7 +751,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
                 if (xin.lemma_.lower() in CompoundsOfSingleHit):
                     continue
                 FoundAMOD = xin
-                FoundAMOD_sentiment = FeelIt(FoundAMOD.lemma_.lower(), FoundAMOD.pos_, FoundAMOD)
+                FoundAMOD_sentiment = FeelIt(FoundAMOD.lemma_.lower(), FoundAMOD.pos_, FoundAMOD, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 listAMODs_sentim.append(FoundAMOD_sentiment)
                 FoundAMOD_name = FoundAMOD.lemma_.lower() + " ["+FoundAMOD.pos_+", "+FoundAMOD.tag_+" ("+str(FoundAMOD_sentiment)+ ")]"
                 listAMODs.append(FoundAMOD_name)
@@ -737,7 +764,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
                     maxw = max(maxw, xin.i)
                     iterated_list_VERB, iterated_list_VERB_sentiment, minw, maxw = VERB_token_IE_parsing(xin, singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                                          LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                                                                                         t, minw,maxw,nountoskip=nountoskip,previousverb=FoundVerb)
+                                                                                                         t, minw,maxw,nountoskip=nountoskip,previousverb=FoundVerb,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                     if iterated_list_VERB and len(iterated_list_VERB) > 0:
                         listAMODs.extend(iterated_list_VERB)
                         if iterated_list_VERB_sentiment and len(iterated_list_VERB_sentiment) > 0:
@@ -748,7 +775,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
                 maxw = max(maxw, xin.i)
                 iterated_list_prep, iterated_list_prep_sentim, minw, maxw = PREP_token_IE_parsing(xin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                                   LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                                                                                  minw=minw,maxw=maxw,FoundVerb=FoundVerb,t=t,nountoskip=nountoskip)
+                                                                                                  minw=minw,maxw=maxw,FoundVerb=FoundVerb,t=t,nountoskip=nountoskip,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if iterated_list_prep and len(iterated_list_prep) > 0:
                     listAMODs.extend(iterated_list_prep)
                     if iterated_list_prep_sentim and len(iterated_list_prep_sentim) > 0:
@@ -768,7 +795,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
                 if (xin.lemma_.lower() in CompoundsOfSingleHit):
                     continue
                 FoundAMOD = xin
-                FoundAMOD_sentiment = FeelIt(FoundAMOD.lemma_.lower(), FoundAMOD.pos_, FoundAMOD)
+                FoundAMOD_sentiment = FeelIt(FoundAMOD.lemma_.lower(), FoundAMOD.pos_, FoundAMOD, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 listAMODs_sentim.append(FoundAMOD_sentiment)
                 FoundAMOD_name = FoundAMOD.lemma_.lower() + " ["+FoundAMOD.pos_+", "+FoundAMOD.tag_+" ("+str(FoundAMOD_sentiment)+ ")]"
                 listAMODs.append(FoundAMOD_name)
@@ -780,7 +807,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
                     maxw = max(maxw, xin.i)
                     iterated_list_VERB, iterated_list_VERB_sentiment, minw, maxw  = VERB_token_IE_parsing(xin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                                           LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                                                                                          t, minw,maxw,nountoskip=nountoskip,previousverb=FoundVerb)
+                                                                                                          t, minw,maxw,nountoskip=nountoskip,previousverb=FoundVerb,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                     if iterated_list_VERB and len(iterated_list_VERB) > 0:
                         listAMODs.extend(iterated_list_VERB)
                         if iterated_list_VERB_sentiment and len(iterated_list_VERB_sentiment) > 0:
@@ -791,7 +818,7 @@ def NOUN_token_IE_parsing(t, singleNOUNs, singleCompoundedHITs, singleCompounded
                 maxw = max(maxw, xin.i)
                 iterated_list_prep, iterated_list_prep_sentim, minw, maxw = PREP_token_IE_parsing(xin,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                                   LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                                                                                  minw=minw,maxw=maxw,FoundVerb=FoundVerb,t=t,nountoskip=nountoskip)
+                                                                                                  minw=minw,maxw=maxw,FoundVerb=FoundVerb,t=t,nountoskip=nountoskip,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if iterated_list_prep and len(iterated_list_prep) > 0:
                     listAMODs.extend(iterated_list_prep)
                     if iterated_list_prep_sentim and len(iterated_list_prep_sentim) > 0:
@@ -843,7 +870,7 @@ def determine_tense_input(tagged, posextractedn):
     return (tense)
 
 
-def keep_token_IE(t, singleNOUNs, singleCompoundedHITs, singleCompoundedHITs_toEXCLUDE, most_frequent_loc_DOC, LOCATION_SYNONYMS_FOR_HEURISTIC, VERBS_TO_KEEP, COMPUTE_OVERALL_SENTIMENT_SCORE, MOST_FREQ_LOC_HEURISTIC):
+def keep_token_IE(t, singleNOUNs, singleCompoundedHITs, singleCompoundedHITs_toEXCLUDE, most_frequent_loc_DOC, LOCATION_SYNONYMS_FOR_HEURISTIC, VERBS_TO_KEEP, COMPUTE_OVERALL_SENTIMENT_SCORE, MOST_FREQ_LOC_HEURISTIC,UseSenticNet=True, UseSentiWordNet=True, UseFigas=True):
     to_give_back = []
     sentiment_to_give_back = []
     spantogiveback = []
@@ -903,7 +930,7 @@ def keep_token_IE(t, singleNOUNs, singleCompoundedHITs, singleCompoundedHITs_toE
                     minw = t.i
                     maxw = t.i
                 if COMPUTE_OVERALL_SENTIMENT_SCORE is True:
-                    OSpolarity = FeelIt_OverallSentiment(t)
+                    OSpolarity = FeelIt_OverallSentiment(t,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                     toveralltestsentece__ = t.sent.text.replace(" ", "__")
                     to_give_back.append(toveralltestsentece__)
                     sentiment_to_give_back.append(OSpolarity)
@@ -912,7 +939,7 @@ def keep_token_IE(t, singleNOUNs, singleCompoundedHITs, singleCompoundedHITs_toE
                 else:
                     to_give_back, sentiment_to_give_back, minw, maxw = NOUN_token_IE_parsing(t,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,
                                                                                              LOCATION_SYNONYMS_FOR_HEURISTIC,VERBS_TO_KEEP,COMPUTE_OVERALL_SENTIMENT_SCORE,
-                                                                                             minw=minw,maxw=maxw)
+                                                                                             minw=minw,maxw=maxw, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 tryl = True
                 while tryl == True:
                     if t.doc[minw].pos_ == "VERB":
@@ -943,7 +970,7 @@ def keep_token_IE(t, singleNOUNs, singleCompoundedHITs, singleCompoundedHITs_toE
                 if (tense in VERBS_TO_KEEP) == False:
                     return [], [], [], [], []
                 if sentiment_to_give_back and len(sentiment_to_give_back) > 0:
-                    sentim_noun = FeelIt(t.lemma_.lower(), t.pos_, t)
+                    sentim_noun = FeelIt(t.lemma_.lower(), t.pos_, t, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
                 if to_give_back and len(to_give_back) > 0:
                     if len(to_give_back) == len(sentiment_to_give_back):
                         listNoun_app = []
@@ -1054,7 +1081,7 @@ def removearticles(text):
     return removed
 
 
-def lemmatize_doc_IE_Sentiment(doc,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,LOCATION_SYNONYMS_FOR_HEURISTIC, VERBS_TO_KEEP, COMPUTE_OVERALL_SENTIMENT_SCORE,MOST_FREQ_LOC_HEURISTIC):
+def lemmatize_doc_IE_Sentiment(doc,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,LOCATION_SYNONYMS_FOR_HEURISTIC, VERBS_TO_KEEP, COMPUTE_OVERALL_SENTIMENT_SCORE,MOST_FREQ_LOC_HEURISTIC,UseSenticNet=True, UseSentiWordNet=True, UseFigas=True):
     vect = []
     vect_sentiment = []
     vect_spans = []
@@ -1070,7 +1097,7 @@ def lemmatize_doc_IE_Sentiment(doc,singleNOUNs,singleCompoundedHITs,singleCompou
         most_frequent_loc = None
     sentencealreadyseen = ""
     for t in doc:                                 
-        vec_for_term, vec_for_sent, spansse, texttse, tensesse = keep_token_IE(t,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,most_frequent_loc, LOCATION_SYNONYMS_FOR_HEURISTIC, VERBS_TO_KEEP, COMPUTE_OVERALL_SENTIMENT_SCORE, MOST_FREQ_LOC_HEURISTIC)
+        vec_for_term, vec_for_sent, spansse, texttse, tensesse = keep_token_IE(t,singleNOUNs,singleCompoundedHITs,singleCompoundedHITs_toEXCLUDE,most_frequent_loc, LOCATION_SYNONYMS_FOR_HEURISTIC, VERBS_TO_KEEP, COMPUTE_OVERALL_SENTIMENT_SCORE, MOST_FREQ_LOC_HEURISTIC,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
         if vec_for_term:
             if len(vec_for_term) > 0:
                 if COMPUTE_OVERALL_SENTIMENT_SCORE == True:
@@ -1108,7 +1135,7 @@ def CheckLeapYear(year):
     return isleap
 
 
-def get_sentiment(text, include, exclude=None, location=None, tense=['past', 'present', 'future', 'NaN'], oss=False):
+def get_sentiment(text, include, exclude=None, location=None, tense=['past', 'present', 'future', 'NaN'], oss=False, UseSenticNet=True, UseSentiWordNet=True, UseFigas=True):
     # text = ['Today is a beautiful day', 'The economy is slowing down and it is a rainy day']
     # include = ['day', 'economy']
     # exclude=None 
@@ -1154,7 +1181,7 @@ def get_sentiment(text, include, exclude=None, location=None, tense=['past', 'pr
         nlp_COUNTRYdoc = nlp_EN(text[j])
         lemmatized_doc, lemmatized_doc_sent, spanss, texttt, tensesss = lemmatize_doc_IE_Sentiment(
             nlp_COUNTRYdoc, singleNOUNs, singleCompoundedHITs, singleCompoundedHITs_toEXCLUDE,
-            LOCATION_SYNONYMS_FOR_HEURISTIC, VERBS_TO_KEEP, COMPUTE_OVERALL_SENTIMENT_SCORE, MOST_FREQ_LOC_HEURISTIC)
+            LOCATION_SYNONYMS_FOR_HEURISTIC, VERBS_TO_KEEP, COMPUTE_OVERALL_SENTIMENT_SCORE, MOST_FREQ_LOC_HEURISTIC,UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
         docs_lemma.append(lemmatized_doc)
         docs_lemma_sentiment.append(lemmatized_doc_sent)
         docsspans.append(spanss)
@@ -1172,3 +1199,19 @@ def get_sentiment(text, include, exclude=None, location=None, tense=['past', 'pr
     DF_ExtractionsSummary = pd.DataFrame(DF_ExtractionsSummary, columns=['Doc_id', 'Text', 'SpannedText', 'Chunk',
                                                                          'Sentiment', 'Tense', 'Include'])
     return DF_ExtractionsSummary
+
+
+#####
+#text = ['Unemployment is rising at high speed', 'The economy is slowing down and unemployment is booming']
+#include = ['unemployment', 'economy']
+#
+#oss=True
+#
+#UseSenticNet=True
+#UseSentiWordNet=True
+#UseFigas=False
+#
+#resp = get_sentiment(text = text, include = include, oss=oss, UseSenticNet=UseSenticNet, UseSentiWordNet=UseSentiWordNet, UseFigas=UseFigas)
+#print(resp.values)
+
+#print("\nEND\n")
